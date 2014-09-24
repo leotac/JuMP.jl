@@ -1,32 +1,24 @@
 using Base.Meta
 
-# extracts left operands of *
-# a*b*c -> a*b
-function timescoef(x::Expr)
-    if x.head != :call || x.args[1] != :*
-        error("In expression $x expected multiplication")
-    end
-    x2 = copy(x)
-    # just delete last argument
-    splice!(x2.args,length(x2.args))
-    return x2
-end
-# extracts last operand of *
-# a*b*c -> c
-function timesvar(x::Expr)
-    if x.head != :call || x.args[1] != :*
-        error("In expression $x expected multiplication")
-    end
-    return x.args[end]
+#addToExpression(ex::Number, c::Number) = ex + c
+
+addToExpression(ex::Number, c::Number, x::Number) = ex + c*x
+
+addToExpression(ex::Number, c::Number, x::Variable) = AffExpr([x],[c],ex)
+
+addToExpression(ex::Number, c::Number, x::AffExpr) = addToExpression(c*x, 1.0, ex) # TODO
+
+addToExpression(ex::Number, c::Variable, x::Variable) = QuadExpr([c],[x],[1.0],AffExpr())
+
+addToExpression(ex::Number, c::AffExpr, x::AffExpr) = c*x + ex # TODO
+
+function addToExpression(aff::AffExpr, c::Number, x::Number)
+    aff.constant += c*x
+    return aff
 end
 
 function addToExpression(aff::AffExpr,c::Number,x::Variable)
     push!(aff,convert(Float64,c),x)
-    return aff
-end
-
-function addToExpression(aff::AffExpr,c::Number,x::Number)
-    (aff.constant += c*x)
     return aff
 end
 
@@ -52,6 +44,8 @@ addToExpression(aff::AffExpr, c::Number, x::QuadExpr) = QuadExpr(copy(x.qvars1),
                                                                  copy(x.qvars2), 
                                                                  c*x.qcoeffs, 
                                                                  addToExpression(aff,c,x.aff))
+
+addToExpression(ex::AffExpr, c::AffExpr, x::AffExpr) = c*x + ex # TODO
 
 function addToExpression(quad::QuadExpr,c::Number,x::Variable)
     push!(quad.aff,convert(Float64,c),x)
@@ -94,7 +88,39 @@ function addToExpression(quad::QuadExpr,c::Number,x::QuadExpr)
     return quad
 end
 
+addToExpression(ex::QuadExpr, c::AffExpr, x::AffExpr) = c*x + ex # TODO
+
 addToExpression(aff, c, x) = error("Cannot construct an affine expression with a term of type ($(typeof(c)))*($(typeof(x)))")
+
+stagedfunction addToExpression_reorder(ex, args...)
+    # how many of the multiplicands are variables?
+    n_var = mapreduce(t -> (t == Variable || t == AffExpr), +, args)
+    has_quad = mapreduce(t -> (t == QuadExpr), |, args)
+    if n_var == 0 && !has_quad
+        #println("No variables")
+        return :(addToExpression(ex, 1.0, (*)(args...)))
+    elseif n_var == 1 && !has_quad # linear
+        #println("Linear")
+        coef_expr = Expr(:call, :*)
+        coef_idx = Int[]
+        var_idx = 0
+        for i in 1:length(args)
+            if args[i] == Variable || args[i] == AffExpr
+                var_idx = i
+            else
+                push!(coef_expr.args, :(args[$i]))
+            end
+        end
+        return :(addToExpression(ex, $coef_expr, args[$var_idx]))
+    else
+        #println("Nonlinear")
+        # fall back
+        coef_expr = Expr(:call, :*, [:(args[$i]) for i in 1:(length(args)-1)]...)
+        return :(addToExpression(ex, $coef_expr, args[$(length(args))]))
+    end
+
+
+end
 
 function parseCurly(x::Expr, aff::Symbol, constantCoef)
     if !(x.args[1] == :sum || x.args[1] == :∑ || x.args[1] == :Σ) # allow either N-ARY SUMMATION or GREEK CAPITAL LETTER SIGMA
@@ -111,9 +137,11 @@ function parseCurly(x::Expr, aff::Symbol, constantCoef)
             error("No commas after semicolon allowed in sum expression, use && for multiple conditions")
         end
         # generate inner loop code first and then wrap in for loops
+        newaff, innercode = parseExpr(x.args[3], aff, constantCoef, aff)
+        @assert aff == newaff
         code = quote
             if $(esc(cond.args[1]))
-                $(parseExpr(x.args[3], aff, constantCoef))
+                $innercode
             end
         end
         for level in length(x.args):-1:4
@@ -123,7 +151,7 @@ function parseCurly(x::Expr, aff::Symbol, constantCoef)
             end)
         end
     else # no condition
-        code = parseExpr(x.args[2], aff, constantCoef)
+        newaff, code = parseExpr(x.args[2], aff, constantCoef, aff)
         for level in length(x.args):-1:3
             code = :(
             for $(esc(x.args[level].args[1])) in $(esc(x.args[level].args[2]))
@@ -143,7 +171,7 @@ function parseCurly(x::Expr, aff::Symbol, constantCoef)
             if isa($aff,GenericAffExpr)
                 sizehint($aff.vars,length($aff.vars)+$len)
                 sizehint($aff.coeffs,length($aff.coeffs)+$len)
-            else
+            elseif isa($aff,GenericQuadExpr)
                 sizehint($aff.qvars1,length($aff.qvars1)+$len)
                 sizehint($aff.qvars2,length($aff.qvars2)+$len)
                 sizehint($aff.qcoeffs,length($aff.qcoeffs)+$len)
@@ -158,36 +186,83 @@ function parseCurly(x::Expr, aff::Symbol, constantCoef)
     return code
 end
 
-function parseExpr(x, aff::Symbol, constantCoef)
+# output is assigned to newaff
+function parseExpr(x, aff::Symbol, coefficients::Vector, newaff::Symbol=gensym())
+    #@show x
+    #@show coefficients
     if !isa(x,Expr)
         # at the lowest level
-        :($aff = addToExpression($aff, $(esc(constantCoef)), $(esc(x))))
+        callexpr = Expr(:call,:addToExpression_reorder,aff,esc(x),coefficients...)
+        return newaff, :($newaff = $callexpr)
     else
         if x.head == :call && x.args[1] == :+
-            Expr(:block,[parseExpr(arg,aff,constantCoef) for arg in x.args[2:end]]...)
+            b = Expr(:block)
+            aff_ = aff
+            for arg in x.args[2:(end-1)]
+                aff_, code = parseExpr(arg, aff_, coefficients)
+                push!(b.args, code)
+            end
+            newaff, code = parseExpr(x.args[end], aff_, coefficients, newaff)
+            push!(b.args, code)
+            return newaff, b
         elseif x.head == :call && x.args[1] == :-
             if length(x.args) == 2 # unary subtraction
-                parseExpr(x.args[2], aff, :(-1.0*$constantCoef))
+                return parseExpr(x.args[2], aff, vcat(coefficients, -1.0), newaff)
             else # a - b - c ...
-                Expr(:block,vcat(parseExpr(x.args[2], aff, constantCoef),
-                     {parseExpr(arg, aff, :(-1.0*$constantCoef)) for arg in x.args[3:end]})...)
+                b = Expr(:block)
+                aff_, code = parseExpr(x.args[2], aff, coefficients)
+                push!(b.args, code)
+                for arg in x.args[3:(end-1)]
+                    aff_,code = parseExpr(arg, aff_, vcat(coefficients, -1.0))
+                    push!(b.args, code)
+                end
+                newaff,code = parseExpr(x.args[end], aff_, vcat(coefficients, -1.0), newaff)
+                push!(b.args, code)
+                return newaff, b
             end
         elseif x.head == :call && x.args[1] == :*
-            coef = timescoef(x)
-            var = timesvar(x)
-            parseExpr(var, aff, :($coef*$constantCoef))
+            # we might need to recurse on multiple arguments, e.g.,
+            # (x+y)*(x+y)
+            is_complex_expr(ex) = isa(ex,Expr) && !isexpr(ex,:ref)
+            n_expr = mapreduce(is_complex_expr, +, x.args)
+            if n_expr == 1 # special case, only recurse on one argument and don't create temporary objects
+                coefficients = Any[c for c in coefficients]
+                which_idx = 0
+                for i in 2:length(x.args)
+                    if is_complex_expr(x.args[i])
+                        which_idx = i
+                    else
+                        push!(coefficients, esc(x.args[i]))
+                    end
+                end
+                return parseExpr(x.args[which_idx], aff, coefficients, newaff)
+            else
+                blk = Expr(:block)
+                for i in 2:length(x.args)
+                    if is_complex_expr(x.args[i])
+                        s = gensym()
+                        newaff_, parsed = parseExpr(x.args[i], s, [1.0])
+                        push!(blk.args, :($s = 0.0; $parsed))
+                        x.args[i] = newaff_
+                    else
+                        x.args[i] = esc(x.args[i])
+                    end
+                end
+                callexpr = Expr(:call,:addToExpression_reorder,aff,vcat(coefficients,x.args[2:end])...)
+                push!(blk.args, :($newaff = $callexpr))
+                return newaff, blk
+            end
         elseif x.head == :call && x.args[1] == :/
             @assert length(x.args) == 3
             numerator = x.args[2]
             denom = x.args[3]
-            parseExpr(numerator, aff, :((1/$denom)*$constantCoef))
+            return parseExpr(numerator, aff, vcat(coefficients,esc(:(1/$denom))),newaff)
         elseif x.head == :curly
-            parseCurly(x,aff,constantCoef)
+            return newaff, :($(parseCurly(x,aff,coefficients)); $newaff = $aff)
         else # at lowest level?
-            if isexpr(x,:comparison)
-                error("Unexpected comparison in expression $x")
-            end
-            :($aff = addToExpression($aff, $(esc(constantCoef)), $(esc(x))))
+            !isexpr(x,:comparison) || error("Unexpected comparison in expression $x") 
+            callexpr = Expr(:call,:addToExpression_reorder,aff,esc(x),coefficients...)
+            return newaff, :($newaff = $callexpr)
         end
     end
 end
@@ -313,12 +388,13 @@ macro addConstraint(m, x, extra...)
              (x.args[2] == :(==)))
             error("in @addConstraint ($(string(x))): expected comparison operator (<=, >=, or ==).")
         end
-        lhs = :($(x.args[1]) - $(x.args[3])) 
+        lhs = :($(x.args[1]) - $(x.args[3]))
+        newaff, parsecode = parseExpr(lhs, :q, [1.0])
         code = quote
             q = AffExpr()
-            $(parseExpr(lhs, :q, 1.0))
+            $parsecode
             $crefflag && !isa(q,AffExpr) && error("Three argument form of @addConstraint does not currently support quadratic constraints")
-            $(refcall) = addConstraint($m, $(x.args[2])(q,0))
+            $(refcall) = addConstraint($m, $(x.args[2])($newaff,0))
         end
     elseif length(x.args) == 5
         # Ranged row
@@ -327,6 +403,7 @@ macro addConstraint(m, x, extra...)
         end
         lb = x.args[1]
         ub = x.args[5]
+        newaff, parsecode = parseExpr(x.args[3],:aff, [1.0])
         code = quote
             aff = AffExpr()
             if !isa($(esc(lb)),Number)
@@ -334,9 +411,9 @@ macro addConstraint(m, x, extra...)
             elseif !isa($(esc(ub)),Number)
                 error(string("in @addConstraint (",$(string(x)),"): expected ",$(string(ub))," to be a number."))
             end
-            $(parseExpr(x.args[3],:aff,1.0))
-            isa(aff,AffExpr) || error("Ranged quadratic constraints are not allowed") 
-            $(refcall) = addConstraint($m, LinearConstraint(aff,$(esc(lb))-aff.constant,$(esc(ub))-aff.constant))
+            $parsecode
+            isa($newaff,AffExpr) || error("Ranged quadratic constraints are not allowed") 
+            $(refcall) = addConstraint($m, LinearConstraint($newaff,$(esc(lb))-aff.constant,$(esc(ub))-aff.constant))
         end
     else
         # Unknown
@@ -384,10 +461,11 @@ macro setObjective(m, args...)
     if sense == :Min || sense == :Max
         sense = Expr(:quote,sense)
     end
+    newaff, parsecode = parseExpr(x, :q, [1.0])
     quote
         q = AffExpr()
-        $(parseExpr(x, :q, 1.0))
-        setObjective($(esc(m)), $(esc(sense)), q)
+        $parsecode
+        setObjective($(esc(m)), $(esc(sense)), $newaff)
     end
 end
 
@@ -404,11 +482,12 @@ macro defExpr(args...)
 
     crefflag = isa(c,Expr)
     refcall, idxvars, idxsets, idxpairs = buildrefsets(c)
+    newaff, parsecode = parseExpr(x, :q, [1.0])
     code = quote
         q = AffExpr()
-        $(parseExpr(x, :q, 1.0))
         $crefflag && !isa(q,AffExpr) && error("Three argument form of @defExpr does not currently support quadratic constraints")
-        $(refcall) = q
+        $parsecode
+        $(refcall) = $newaff
     end
     
     return getloopedcode(c, code, :(), idxvars, idxsets, idxpairs, :AffExpr)
