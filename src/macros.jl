@@ -93,6 +93,9 @@ addToExpression(ex::QuadExpr, c::AffExpr, x::AffExpr) = c*x + ex # TODO
 addToExpression(aff, c, x) = error("Cannot construct an affine expression with a term of type ($(typeof(c)))*($(typeof(x)))")
 
 stagedfunction addToExpression_reorder(ex, args...)
+    if !isleaftype(ex) || mapreduce(t -> !isleaftype(t), |, args)
+        error("Can't process abstract types")
+    end
     # how many of the multiplicands are variables?
     n_var = mapreduce(t -> (t == Variable || t == AffExpr), +, args)
     has_quad = mapreduce(t -> (t == QuadExpr), |, args)
