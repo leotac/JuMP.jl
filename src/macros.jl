@@ -6,7 +6,11 @@ addToExpression(ex::Number, c::Number, x::Number) = ex + c*x
 
 addToExpression(ex::Number, c::Number, x::Variable) = AffExpr([x],[c],ex)
 
-addToExpression(ex::Number, c::Number, x::AffExpr) = addToExpression(c*x, 1.0, ex) # TODO
+function addToExpression(ex::Number, c::Number, x::AffExpr)
+    scale!(x.coeffs, c)
+    x.constant += ex
+    return x
+end
 
 addToExpression(ex::Number, c::Variable, x::Variable) = QuadExpr([c],[x],[1.0],AffExpr())
 
