@@ -44,6 +44,8 @@ addToExpression(aff::AffExpr,c::Variable,x::AffExpr) = QuadExpr(fill(c,length(x.
                                                                 x.coeffs,
                                                                 addToExpression(aff,x.constant,c))
 
+addToExpression(aff::AffExpr, x::QuadExpr, c::Number) = addToExpression(aff,c,x)
+
 addToExpression(aff::AffExpr, c::Number, x::QuadExpr) = QuadExpr(copy(x.qvars1),
                                                                  copy(x.qvars2), 
                                                                  c*x.qcoeffs, 
