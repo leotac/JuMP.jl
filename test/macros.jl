@@ -86,7 +86,7 @@ let
     C = [1 2 3; 4 5 6; 7 8 9]
 
     @addConstraint(m, sum{ x[i,j]*(C[i,j]-1), i = 1:3, j = 1:3; i != j} == 0)
-    @test conToStr(m.linconstr[end]) == "x[1,2] + 2 x[1,3] + 3 x[2,1] + 5 x[2,3] + 6 x[3,1] + 7 x[3,2] == 0"
+    @test conToStr(m.linconstr[end]) == "x[1,2] + 2 x[1,3] + 3 x[2,1] + 5 x[2,3] + 6 x[3,1] + 7 x[3,2] $eq 0"
 
     con = @addConstraint(m, sum{ C[i,j]*x[i,j], i = 1:3, j = 1:3; i != j} == 0)
     @test conToStr(m.linconstr[end]) == "2 x[1,2] + 3 x[1,3] + 4 x[2,1] + 6 x[2,3] + 7 x[3,1] + 8 x[3,2] $eq 0"

@@ -494,8 +494,8 @@ macro defExpr(args...)
     newaff, parsecode = parseExpr(x, :q, [1.0])
     code = quote
         q = AffExpr()
-        $crefflag && !isa(q,AffExpr) && error("Three argument form of @defExpr does not currently support quadratic constraints")
         $parsecode
+        $crefflag && !isa($newaff,AffExpr) && error("Three argument form of @defExpr does not currently support quadratic constraints")
         $(refcall) = $newaff
     end
     
