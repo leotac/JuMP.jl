@@ -18,8 +18,8 @@ end
 #       idxpairs: Vector of IndexPair
 function buildrefsets(c::Expr)
     isexpr(c,:ref) || error("Unrecognized name in construction macro; expected $(string(c)) to be of the form name[...]")
-    idxvars = {}
-    idxsets = {}
+    idxvars = Any[]
+    idxsets = Any[]
     idxpairs = IndexPair[]
     # Creating an indexed set of refs
     cname = c.args[1]
@@ -41,8 +41,8 @@ function buildrefsets(c::Expr)
     return refcall, idxvars, idxsets, idxpairs
 end
 
-buildrefsets(c::Symbol)  = (esc(c), {}, {}, IndexPair[])
-buildrefsets(c::Nothing) = (gensym(), {}, {}, IndexPair[])
+buildrefsets(c::Symbol)  = (esc(c), Any[], Any[], IndexPair[])
+buildrefsets(c::Nothing) = (gensym(), Any[], Any[], IndexPair[])
 
 ###############################################################################
 # getloopedcode
