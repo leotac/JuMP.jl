@@ -12,7 +12,11 @@ end
 
 addToExpression(ex::Number, c::Variable, x::Variable) = QuadExpr([c],[x],[1.0],AffExpr())
 
-addToExpression(ex::Number, c::AffExpr, x::AffExpr) = c*x + ex # TODO
+function addToExpression(ex::Number, c::AffExpr, x::AffExpr)
+    q = c*x
+    q.aff.constant += ex
+    return q
+end
 
 function addToExpression(aff::AffExpr, c::Number, x::Number)
     aff.constant += c*x
@@ -49,7 +53,10 @@ addToExpression(aff::AffExpr, c::Number, x::QuadExpr) = QuadExpr(copy(x.qvars1),
                                                                  c*x.qcoeffs, 
                                                                  addToExpression(aff,c,x.aff))
 
-addToExpression(ex::AffExpr, c::AffExpr, x::AffExpr) = c*x + ex # TODO
+function addToExpression(ex::AffExpr, c::AffExpr, x::AffExpr)
+    q = c*x
+    return addToExpression(q,1.0,ex)
+end
 
 function addToExpression(quad::QuadExpr,c::Number,x::Variable)
     push!(quad.aff,convert(Float64,c),x)
@@ -92,7 +99,10 @@ function addToExpression(quad::QuadExpr,c::Number,x::QuadExpr)
     return quad
 end
 
-addToExpression(ex::QuadExpr, c::AffExpr, x::AffExpr) = c*x + ex # TODO
+function addToExpression(ex::QuadExpr, c::AffExpr, x::AffExpr)
+    q = c*x
+    return addToExpression(ex, 1.0, q)
+end
 
 addToExpression(aff, c, x) = error("Cannot construct an affine expression with a term of type ($(typeof(c)))*($(typeof(x)))")
 
