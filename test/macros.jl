@@ -42,8 +42,10 @@ let
 
     @addConstraint(m, 3x - y == 3.3(w + 2z) + 5) 
     @test conToStr(m.linconstr[end]) == "3 x - y - 3.3 w - 6.6 z $eq 5"
-    @addConstraint(m, 3x - y == (w + 2z)*3.3 + 5)
-    @test conToStr(m.linconstr[end]) == "3 x - y - 3.3 w - 6.6 z $eq 5"
+    if VERSION >= v"0.4.0-"
+        @addConstraint(m, 3x - y == (w + 2z)*3.3 + 5)
+        @test conToStr(m.linconstr[end]) == "3 x - y - 3.3 w - 6.6 z $eq 5"
+    end
     @addConstraint(m, (x+y)/2 == 1) 
     @test conToStr(m.linconstr[end]) == "0.5 x + 0.5 y $eq 1"
     @addConstraint(m, -1 <= x-y <= t) 
@@ -55,8 +57,10 @@ let
     @defExpr(aff, 3x - y - 3.3(w + 2z) + 5)
     @test affToStr(aff) == "3 x - y - 3.3 w - 6.6 z + 5"
 
-    @defExpr(qaff, (w+3)*(2x+1)+10)
-    @test quadToStr(qaff) == "2 w*x + 6 x + w + 13"
+    if VERSION >= v"0.4.0-"
+        @defExpr(qaff, (w+3)*(2x+1)+10)
+        @test quadToStr(qaff) == "2 w*x + 6 x + w + 13"
+    end
 end
 
 let
@@ -85,8 +89,10 @@ let
     @defVar(m, x[1:3,1:3])
     C = [1 2 3; 4 5 6; 7 8 9]
 
-    @addConstraint(m, sum{ x[i,j]*(C[i,j]-1), i = 1:3, j = 1:3; i != j} == 0)
-    @test conToStr(m.linconstr[end]) == "x[1,2] + 2 x[1,3] + 3 x[2,1] + 5 x[2,3] + 6 x[3,1] + 7 x[3,2] $eq 0"
+    if VERSION >= v"0.4.0-"
+        @addConstraint(m, sum{ x[i,j]*(C[i,j]-1), i = 1:3, j = 1:3; i != j} == 0)
+        @test conToStr(m.linconstr[end]) == "x[1,2] + 2 x[1,3] + 3 x[2,1] + 5 x[2,3] + 6 x[3,1] + 7 x[3,2] $eq 0"
+    end
 
     con = @addConstraint(m, sum{ C[i,j]*x[i,j], i = 1:3, j = 1:3; i != j} == 0)
     @test conToStr(m.linconstr[end]) == "2 x[1,2] + 3 x[1,3] + 4 x[2,1] + 6 x[2,3] + 7 x[3,1] + 8 x[3,2] $eq 0"
@@ -196,8 +202,10 @@ let
     @addConstraint(m, sum{sum{(x[i] - 2)*x[j],j=4:5},i=2:3} >= -3*x[2]*2*x[4])
     @test conToStr(m.quadconstr[end]) == "7 x[2]*x[4] + x[3]*x[4] + x[2]*x[5] + x[3]*x[5] - 4 x[4] - 4 x[5] $geq 0"
 
-    @addConstraint(m, sum{x[i],i=1:2}*sum{x[i],i=2:3} >= 0)
-    @test conToStr(m.quadconstr[end]) == "x[1]*x[2] + x[2]² + x[1]*x[3] + x[2]*x[3] $geq 0"
+    if VERSION > v"0.4.0-"
+        @addConstraint(m, sum{x[i],i=1:2}*sum{x[i],i=2:3} >= 0)
+        @test conToStr(m.quadconstr[end]) == "x[1]*x[2] + x[2]² + x[1]*x[3] + x[2]*x[3] $geq 0"
+    end
 
     myquadexpr = x[1]*x[2]
     @addConstraint(m, sum{i*myquadexpr + x[i], i=1:3} + sum{x[i] + myquadexpr*i, i=1:3} == 0)

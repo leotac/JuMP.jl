@@ -156,7 +156,9 @@ function parseCurly(x::Expr, aff::Symbol, constantCoef)
     return code
 end
 
-function parseExpr(x, aff::Symbol, constantCoef)
+parseExpr(x, aff::Symbol, constantCoef::Vector) = parseExpr(x, aff, Expr(:call,:*,constantCoef...))
+
+function parseExpr(x, aff::Symbol, constantCoef::Union(Number, Expr))
     if !isa(x,Expr)
         # at the lowest level
         return aff, :($aff = addToExpression($aff, $(esc(constantCoef)), $(esc(x))))
